@@ -274,3 +274,94 @@ class PostViewSet(viewsets.ViewSet, generics.ListAPIView):
     serializer_class = serializers.PostSerializer
     pagination_class = paginators.PostPaginator
 
+class MomoViewSet(viewsets.ViewSet):
+    serializer_class = serializers.ResidentFeeSerializer
+
+    @action(detail=False, methods=['post'], url_path='process_payment', url_name='process_payment')
+    @csrf_exempt
+    def process_payment(self, request):
+        if request.method == 'POST':
+            try:
+                payment_data = request.data
+                amount = payment_data.get('price')
+                resident_fee_id = payment_data.get('resident_fee_id')
+                amount = int(amount)
+                try:
+                    resident_fee = ResidentFee.objects.get(id=resident_fee_id)
+                except ResidentFee.DoesNotExist:
+                    return JsonResponse({'error': 'ResidentFee not found'}, status=404)
+
+                expected_amount = resident_fee.fee.price
+                print(amount)
+                print(expected_amount)
+                if amount != expected_amount:
+                    return JsonResponse({'error': 'Amount does not match'}, status=400)
+
+                order_id = str(uuid.uuid4())
+                request_id = str(uuid.uuid4())
+
+                endpoint = "https://test-payment.momo.vn/v2/gateway/api/create"
+                access_key = "F8BBA842ECF85"
+                secret_key = "K951B6PE1waDMi640xX08PD3vg6EkVlz"
+                order_info = str(resident_fee_id)
+                redirect_url = "https://longtocdo107.pythonanywhere.com/"
+                ipn_url = "http://192.168.1.84:8000/momo/momo_ipn/"
+
+                raw_signature = f"accessKey={access_key}&amount={amount}&extraData=&ipnUrl={ipn_url}&orderId={order_id}&orderInfo={order_info}&partnerCode=MOMO&redirectUrl={redirect_url}&requestId={request_id}&requestType=captureWallet"
+                h = hmac.new(bytes(secret_key, 'ascii'), bytes(raw_signature, 'ascii'), hashlib.sha256)
+                signature = h.hexdigest()
+
+                data = {
+                    'partnerCode': 'MOMO',
+                    'partnerName': 'Test',
+                    'storeId': 'MomoTestStore',
+                    'requestId': request_id,
+                    'amount': str(amount),
+                    'orderId': order_id,
+                    'orderInfo': order_info,
+                    'redirectUrl': redirect_url,
+                    'ipnUrl': ipn_url,
+                    'lang': 'vi',
+                    'extraData': '',
+                    'requestType': 'captureWallet',
+                    'signature': signature
+                }
+
+                response = requests.post(endpoint, json=data, proxies=None)
+
+                if response.status_code == 200:
+                    response_data = response.json()
+                    if 'payUrl' in response_data:
+                        return JsonResponse({'payUrl': response_data['payUrl']})
+                    else:
+                        return JsonResponse({'error': 'Failed to process payment'}, status=400)
+                else:
+                    return JsonResponse({'error': 'Failed to communicate with MoMo'}, status=500)
+            except json.JSONDecodeError:
+                return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+        else:
+            return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+    @action(detail=False, methods=['post'], url_path='momo_ipn')
+    @csrf_exempt
+    def momo_ipn(self, request):
+        if request.method == 'POST':
+            try:
+                ipn_data = request.data  # Sử dụng request.data thay vì json.loads(request.data)
+                order_info = ipn_data.get('orderInfo')
+                result_code = ipn_data.get('resultCode')
+
+                if result_code == 0:
+                    try:
+                        resident_fee = ResidentFee.objects.get(id=order_info)
+                        resident_fee.status = resident_fee.EnumStatusFee.DONE
+                        resident_fee.save()
+                        return JsonResponse({'message': 'Payment successful and status updated'}, status=200)
+                    except ResidentFee.DoesNotExist:
+                        return JsonResponse({'error': 'ResidentFee not found'}, status=409)
+                else:
+                    return JsonResponse({'error': 'Payment failed'}, status=400)
+            except json.JSONDecodeError:
+                return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+        else:
+            return JsonResponse({'error': 'Invalid request method'}, status=405)

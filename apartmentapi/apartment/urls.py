@@ -11,6 +11,8 @@ r.register('apartment', views.ApartmentViewSet, basename='apartment')
 r.register('residents', views.ResidentViewSet, basename='residents')
 r.register('users', views.UserViewSet, basename='users')
 r.register('service', views.ServiceViewSet, basename='monthlyfee')
+r.register('momo',views.MomoViewSet,basename='momo')
+
 
 
 
