@@ -32,11 +32,11 @@ class ResidentViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveA
     parser_classes = [parsers.MultiPartParser, JSONParser]
     permission_classes = [permissions.IsAuthenticated]
 
-    # def get_permissions(self):
-    #     if self.action in ['add_reflections', 'get_residentfees', 'upload_avatar', 'update_infor', 'get_reflection',
-    #                        'register_vehicle']:
-    #         return [permissions.IsAuthenticated()]
-    #     return [permissions.AllowAny()]
+    def get_permissions(self):
+        if self.action in ['add_reflections', 'get_residentfees', 'upload_avatar', 'update_infor', 'get_reflection',
+                           'register_vehicle']:
+            return [permissions.IsAuthenticated()]
+        return [permissions.AllowAny()]
     @action(methods=['get'], url_path='get_residentfees', detail=False)
     def get_residentfees(self, request):
         user_id = request.user.id
@@ -162,6 +162,11 @@ class ItemViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIVi
 class ReservationViewSet(viewsets.ViewSet, generics.ListAPIView):
     queryset = ReservationVehicle.objects.all()
     serializer_class = serializers.ReservationVehicleSerializer
+
+
+class QuestionViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+    queryset = Question.objects.all()
+    serializer_class = serializers.QuestionSerializer
 
 
 
