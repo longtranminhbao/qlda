@@ -26,6 +26,54 @@ from apartment.models import ResidentFee
 
 
 
+class ResidentFeeViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+    queryset = ResidentFee.objects.all()
+    serializer_class = serializers.ResidentFeeSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_permissions(self):
+        if self.action in ['get_queryset', 'update_paid']:
+            return [permissions.IsAuthenticated()]
+
+        return [permissions.AllowAny()]
+
+    def get_queryset(self):
+        queryset = self.queryset
+
+        if self.action.__eq__('list'):
+            q = self.request.query_params.get('q')
+            if q:
+                queryset = queryset.filter(resident_id=q)
+
+        return queryset
+
+    @action(detail=True, methods=['patch'], url_path='upload_proof', url_name='upload_proof')
+    def upload_proof(self, request, pk):
+        # user_id = request.user.id
+        fee_id = self.get_object()
+        print(fee_id)
+        avatar_file = request.data.get('', None)
+
+        try:
+            residentfee = get_object_or_404(ResidentFee, id=fee_id)
+            new_avatar = cloudinary.uploader.upload(avatar_file)
+            residentfee.payment_proof = new_avatar['secure_url']
+            residentfee.status = residentfee.EnumStatusFee.DONE
+            residentfee.save()
+        except ResidentFee.DoesNotExist:
+            return ResponseRest({'detail': 'Resident not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(methods=['patch'], detail=True, url_path='update-paid')
+    def update_paid(self, request, pk=None):
+        try:
+            residentfee = self.get_object()
+            residentfee.resident = request.user.resident
+            residentfee.status = True
+            residentfee.save()
+            return ResponseRest({'message': 'Receipt paid successfully'}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return ResponseRest(dict(error=e.__str__()), status=status.HTTP_400_BAD_REQUEST)
+
 class ResidentViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
     queryset = Resident.objects.all()
     serializer_class = serializers.ResidentSerializer
@@ -168,6 +216,47 @@ class QuestionViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveA
     queryset = Question.objects.all()
     serializer_class = serializers.QuestionSerializer
 
+class SurveyViewSet(viewsets.ViewSet, generics.ListAPIView, generics.RetrieveAPIView):
+    queryset = Survey.objects.all()
+    serializer_class = serializers.SurveySerializer
+    permission_classes = [permissions.AllowAny]
+    action(detail=False, methods=['get'])
+
+    @action(detail=False, methods=['get'], url_path='pending')
+    def pending_surveys(self, request):
+        user = request.user
+        resident = Resident.objects.get(user_info=user)
+        completed_surveys = Survey.objects.filter(response__resident=resident)
+        pending_surveys = Survey.objects.exclude(pk__in=completed_surveys)
+        serializer = self.get_serializer(pending_surveys, many=True)
+        return ResponseRest(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='completed')
+    def completed_surveys(self, request):
+        user = request.user
+        resident = Resident.objects.get(user_info=user)
+        completed = Survey.objects.filter(response__resident=resident)
+        serializer = self.get_serializer(completed, many=True)
+        return ResponseRest(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='response')
+    def submit_response(self, request, pk=None):
+        survey = get_object_or_404(Survey, pk=pk)
+        resident = get_object_or_404(Resident, user_info=request.user)
+
+        data = request.data.copy()
+        data['survey'] = survey.id
+        data['resident'] = resident.user_info
+
+        print(data)
+        serializer = serializers.ResponseSerializer(data=data)
+        print(serializer)
+        if serializer.is_valid():
+            serializer.save()
+            return ResponseRest(serializer.data, status=status.HTTP_201_CREATED)
+
+        return ResponseRest(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 
@@ -264,20 +353,7 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView, PermissionRequiredMi
         return ResponseRest({'detail': 'New password has been sent to your email address.'}, status=status.HTTP_200_OK)
 
 
-class AnswerViewSet(viewsets.ViewSet, generics.ListAPIView):
-    queryset = Answer.objects.all()
-    serializer_class = serializers.AnswerSerializer
 
-
-class ResponseViewSet(viewsets.ViewSet, generics.RetrieveAPIView):
-    queryset = Response.objects.all()
-    serializer_class = serializers.ResponseSerializer
-
-
-class PostViewSet(viewsets.ViewSet, generics.ListAPIView):
-    queryset = Post.objects.all()
-    serializer_class = serializers.PostSerializer
-    pagination_class = paginators.PostPaginator
 
 class MomoViewSet(viewsets.ViewSet):
     serializer_class = serializers.ResidentFeeSerializer
